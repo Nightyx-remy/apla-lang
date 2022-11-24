@@ -1,0 +1,6 @@
+include "std-stdio"
+
+fn main() =>
+	printf("Hello world!")
+
+extern fn printf(fmt: String)
