@@ -92,6 +92,7 @@ impl Parser {
                 Token::Decimal(value) => Ok(current.convert(Node::Value(ValueNode::Decimal(value.clone())))),
                 Token::String(value) => Ok(current.convert(Node::Value(ValueNode::String(value.clone())))),
                 Token::Identifier(id) => self.handle_identifier(current.convert(id.clone())),
+                Token::Keyword(Keyword::This) => Ok(current.convert(Node::Value(ValueNode::This))),
                 _ => Err(ParserError::UnexpectedToken(current.clone(), Some("expr0".to_string())))
             }
         } else {
@@ -116,7 +117,7 @@ impl Parser {
                 self.expect_current(Some(Token::Comma), Some(",".to_string()))?;
                 self.advance();
             }
-            let value = self.parse_expr2()?;
+            let value = self.parse_expr()?;
             params.push(FunctionCallParameter { value });
             current = self.expect_current(None, Some(")".to_string()))?;
         }
@@ -139,8 +140,7 @@ impl Parser {
             };
 
             let op = match current.data {
-                Token::Star => current.convert(Operator::Multiply),
-                Token::Slash => current.convert(Operator::Divide),
+                Token::Dot => current.convert(Operator::MemberAccess),
                 _ => break
             };
             self.advance();
@@ -163,8 +163,8 @@ impl Parser {
             };
 
             let op = match current.data {
-                Token::Plus => current.convert(Operator::Plus),
-                Token::Dash => current.convert(Operator::Minus),
+                Token::Star => current.convert(Operator::Multiply),
+                Token::Slash => current.convert(Operator::Divide),
                 _ => break
             };
             self.advance();
@@ -176,6 +176,57 @@ impl Parser {
         }
 
         Ok(left)
+    }
+
+    fn parse_expr3(&mut self) -> Result<Positioned<Node>, ParserError> {
+        let mut left = self.parse_expr2()?;
+
+        loop {
+            let Some(current) = self.current() else {
+                break;
+            };
+
+            let op = match current.data {
+                Token::Plus => current.convert(Operator::Plus),
+                Token::Dash => current.convert(Operator::Minus),
+                _ => break
+            };
+            self.advance();
+
+            let right = self.parse_expr2()?;
+            let start = left.start.clone();
+            let end = right.end.clone();
+            left = Positioned::new(Node::BinaryOperation { lhs: Box::new(left), op, rhs: Box::new(right) }, start, end);
+        }
+
+        Ok(left)
+    }
+
+    fn parse_expr4(&mut self) -> Result<Positioned<Node>, ParserError> {
+        let mut left = self.parse_expr3()?;
+
+        loop {
+            let Some(current) = self.current() else {
+                break;
+            };
+
+            let op = match current.data {
+                Token::Equal => current.convert(Operator::Assignment),
+                _ => break
+            };
+            self.advance();
+
+            let right = self.parse_expr3()?;
+            let start = left.start.clone();
+            let end = right.end.clone();
+            left = Positioned::new(Node::BinaryOperation { lhs: Box::new(left), op, rhs: Box::new(right) }, start, end);
+        }
+
+        Ok(left)
+    }
+
+    fn parse_expr(&mut self) -> Result<Positioned<Node>, ParserError> {
+        self.parse_expr4()
     }
 
     fn parse_variable_definition(&mut self, var_type: Positioned<VarType>) -> Result<Positioned<Node>, ParserError> {
@@ -204,7 +255,7 @@ impl Parser {
         if let Some(current) = current {
             if current.data == Token::Equal {
                 self.advance();
-                value = Some(Box::new(self.parse_expr2()?));
+                value = Some(Box::new(self.parse_expr()?));
                 end = value.as_ref().unwrap().end.clone();
             } 
         }
@@ -219,7 +270,7 @@ impl Parser {
         }, start, end))        
     }
 
-    fn parse_function_definition(&mut self, start: Position, external: bool) -> Result<Positioned<Node>, ParserError> {
+    fn parse_function_definition(&mut self, start: Position, external: bool, constructor: bool) -> Result<Positioned<Node>, ParserError> {
         self.advance();
 
         // Get name
@@ -253,17 +304,19 @@ impl Parser {
 
         // Get type
         let mut data_type = None;
-        let current = self.current();
-        if let Some(current) = current {
-            if current.data == Token::Colon {
-                self.advance();
-                data_type = Some(self.expect_identifier()?);
-                self.advance();
-                end = data_type.as_ref().unwrap().end.clone();
-            }
-        } else {
-            if !external {
-                return Err(ParserError::UnexpectedEOF(Some("=>".to_string()))); 
+        if !constructor {
+            let current = self.current();
+            if let Some(current) = current {
+                if current.data == Token::Colon {
+                    self.advance();
+                    data_type = Some(self.expect_identifier()?);
+                    self.advance();
+                    end = data_type.as_ref().unwrap().end.clone();
+                }
+            } else {
+                if !external {
+                    return Err(ParserError::UnexpectedEOF(Some("=>".to_string()))); 
+                }
             }
         }
 
@@ -284,9 +337,10 @@ impl Parser {
 
                 if current.data != Token::Tab {
                     break;
-                }
+                } 
 
                 self.advance();
+                
                 let node = self.parse_current()?;
                 end = node.end.clone();
                 body.push(node);
@@ -302,13 +356,14 @@ impl Parser {
             name, 
             return_type: data_type, 
             params, 
-            body 
+            body,
+            constructor 
         }, start, end))
     }
 
     fn parse_return(&mut self, start: Position) -> Result<Positioned<Node>, ParserError> {
         self.advance();
-        let expr = self.parse_expr2()?;
+        let expr = self.parse_expr()?;
         let end = expr.end.clone();
         Ok(Positioned::new(Node::Return(Box::new(expr)), start, end))
     }
@@ -321,9 +376,43 @@ impl Parser {
         Ok(Positioned::new(Node::Include(path), start, end))
     }
 
+    fn parse_class_definition(&mut self, start: Position) -> Result<Positioned<Node>, ParserError> {
+        self.advance();
+
+        // Body
+        let name = self.expect_identifier()?;
+        self.advance();
+
+        // Body
+        let mut body = Vec::new();
+        let mut end = name.end.clone();
+
+        let mut current_opt = self.current();
+        while let Some(current) = &current_opt {
+            if current.data == Token::NewLine {
+                self.advance();
+                current_opt = self.current();
+                continue;
+            }
+
+            if current.data != Token::Tab {
+                break;
+            } 
+
+            self.advance();
+            
+            let node = self.parse_current()?;
+            end = node.end.clone();
+            body.push(node);
+            current_opt = self.current();
+        }
+
+        Ok(Positioned::new(Node::ClassDefinition { name, body }, start, end))
+    }
+
     fn handle_keyword(&mut self, keyword: Positioned<Keyword>) -> Result<Positioned<Node>, ParserError> {
         match keyword.data {
-            Keyword::Fn => self.parse_function_definition(keyword.start.clone(), false),
+            Keyword::Fn => self.parse_function_definition(keyword.start.clone(), false, false),
             Keyword::Const => {
                 let res = self.parse_variable_definition(keyword.convert(VarType::Constant))?;
                 self.expect_end_of_statement()?;
@@ -346,14 +435,17 @@ impl Parser {
                 let start = keyword.start.clone();
                 self.advance();
                 self.expect_current(Some(Token::Keyword(Keyword::Fn)), Some("fn".to_string()))?;
-                self.parse_function_definition(start, true)
+                self.parse_function_definition(start, true, false)
             },
             Keyword::Include => {
                 let res = self.parse_include(keyword.start.clone())?;
                 self.expect_end_of_statement()?;
                 self.advance();
                 Ok(res)
-            }
+            },
+            Keyword::Class => self.parse_class_definition(keyword.start.clone()),
+            Keyword::This => self.parse_expr(),
+            Keyword::New => self.parse_function_definition(keyword.start.clone(), false, true),
         }
     } 
 
@@ -364,7 +456,7 @@ impl Parser {
                 Token::Decimal(_) |
                 Token::String(_) |
                 Token::Identifier(_) => {
-                    let res = self.parse_expr2()?;
+                    let res = self.parse_expr()?;
                     self.expect_end_of_statement()?;
                     self.advance();
                     Ok(res)

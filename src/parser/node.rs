@@ -20,14 +20,19 @@ pub enum Node {
         name: Positioned<String>,
         return_type: Option<Positioned<String>>,
         params: Vec<FunctionDefinitionParameter>,
-        body: Option<Vec<Positioned<Node>>>
+        body: Option<Vec<Positioned<Node>>>,
+        constructor: bool,
     }, 
     Return(Box<Positioned<Node>>),
     FunctionCall {
         name: Positioned<String>,
         params: Vec<FunctionCallParameter>,
     },
-    Include (Positioned<String>)
+    Include (Positioned<String>),
+    ClassDefinition {
+        name: Positioned<String>,
+        body: Vec<Positioned<Node>>
+    }
 }
 
 impl Display for Node {
@@ -42,6 +47,8 @@ impl Display for Node {
                     Operator::Minus => write!(f, " - ")?,
                     Operator::Multiply => write!(f, " * ")?,
                     Operator::Divide => write!(f, " / ")?,
+                    Operator::MemberAccess => write!(f, ".")?,
+                    Operator::Assignment => write!(f, " = ")?,
                 }
                 write!(f, "{})", rhs.data)?;
             },
@@ -61,11 +68,17 @@ impl Display for Node {
                     write!(f, " = {}", value.data)?;
                 }
             },
-            Node::FunctionDefinition { name, return_type, params, body } => {
+            Node::FunctionDefinition { name, return_type, params, body, constructor } => {
                 if body.is_none() {
                     write!(f, "extern ")?;
                 }
-                write!(f, "fn {}(", name.data)?;
+
+                if *constructor {
+                    write!(f, "new ")?;
+                } else {
+                    write!(f, "fn ")?;
+                }
+                write!(f, "{}(", name.data)?;
 
                 // Parameters
                 let mut i = 0;
@@ -104,6 +117,16 @@ impl Display for Node {
                 write!(f, ")")?;
             },
             Node::Include(path) => write!(f, "include \"{}\"", path.data)?,
+            Node::ClassDefinition { name, body } => {
+                write!(f, "class {}", name.data)?;
+
+                for node in body.iter() {
+                    let str = node.data.to_string();
+                    for line in str.lines() {
+                        write!(f, "\n\t{}", line)?;
+                    }
+                }
+            },
         }
         Ok(())
     }
@@ -114,7 +137,8 @@ impl Display for Node {
 pub enum ValueNode {
     Decimal(String),
     String(String),
-    VariableCall(String)
+    VariableCall(String),
+    This,
 }
 
 impl Display for ValueNode {
@@ -124,6 +148,7 @@ impl Display for ValueNode {
             ValueNode::Decimal(val) => write!(f, "{}", val),
             ValueNode::String(val) => write!(f, "\"{}\"", val),
             ValueNode::VariableCall(name) => write!(f, "{}", name),
+            ValueNode::This => write!(f, "self"),
         }
     }
 
@@ -134,7 +159,9 @@ pub enum Operator {
     Plus,
     Minus,
     Multiply,
-    Divide
+    Divide,
+    MemberAccess,
+    Assignment
 }
 
 #[derive(Clone)]

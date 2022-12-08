@@ -7,7 +7,10 @@ pub enum Keyword {
     Var,
     Return,
     Extern,
-    Include
+    Include,
+    Class,
+    This,
+    New
 }
 
 impl Keyword {
@@ -20,6 +23,9 @@ impl Keyword {
             "return" => Some(Keyword::Return),
             "extern" => Some(Keyword::Extern),
             "include" => Some(Keyword::Include),
+            "class" => Some(Keyword::Class),
+            "self" => Some(Keyword::This),
+            "new" => Some(Keyword::New),
             _ => None
         }
     }
@@ -36,6 +42,9 @@ impl Display for Keyword {
             Keyword::Return => write!(f, "return"),
             Keyword::Extern => write!(f, "extern"),
             Keyword::Include => write!(f, "include"),
+            Keyword::Class => write!(f, "class"),
+            Keyword::This => write!(f, "self"),
+            Keyword::New => write!(f, "new"),
         }
     }
 
@@ -54,6 +63,7 @@ pub enum Token {
     Equal,
     Colon,
     Comma,
+    Dot,
     LeftParenthesis,
     RightParenthesis,
     RightDoubleArrow,
@@ -76,6 +86,7 @@ impl Display for Token {
             Token::Equal => write!(f, "="),
             Token::Colon => write!(f, ":"),
             Token::Comma => write!(f, ","),
+            Token::Dot => write!(f, "."),
             Token::LeftParenthesis => write!(f, "("),
             Token::RightParenthesis => write!(f, ")"),
             Token::RightDoubleArrow => write!(f, "=>"),

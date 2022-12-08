@@ -59,7 +59,7 @@ impl Lexer {
         let start = self.pos.clone();
 
         let mut current = self.current();
-        while current.is_alphabetic() {
+        while current.is_alphanumeric() || current == '_' {
             buf.push(current);
             self.advance();
             current = self.current();
@@ -139,6 +139,7 @@ impl Lexer {
                 ')' => tokens.push(self.make_single(Token::RightParenthesis)),
                 ':' => tokens.push(self.make_single(Token::Colon)),
                 ',' => tokens.push(self.make_single(Token::Comma)),
+                '.' => tokens.push(self.make_single(Token::Dot)),
                 '\n' => {
                     let start = self.pos.clone();
                     let mut end = self.pos.clone();
