@@ -1,6 +1,9 @@
 include "std-stdio"
 
-fn main() =>
-	printf("Hello world!")
+extern fn printf(fmt: c_string)
 
-extern fn printf(fmt: String)
+fn say_hello() =>
+	printf("Hello")
+
+fn main() =>
+	say_hello()

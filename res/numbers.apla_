@@ -1,0 +1,23 @@
+class I8 
+    const inner: c_byte
+
+    new create(value: c_byte) =>
+        self.inner = value
+
+class I16
+    const inner: c_short
+
+    new create(value: c_short) =>
+        self.inner = value
+
+class I32 
+    const inner: c_int
+
+    new create(value: c_int) =>
+        self.inner = value
+
+class I64
+    const inner: c_long
+
+    new create(value: c_long) =>
+        self.inner = value
