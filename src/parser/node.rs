@@ -93,6 +93,11 @@ impl Display for Node {
                 }
                 write!(f, ")")?;
 
+                // Return type
+                if let Some(return_type) = return_type {
+                    write!(f, ": {}", return_type.data)?;
+                }
+
                 if let Some(body) = body {
                     write!(f, " =>")?;
                     for node in body.iter() {
