@@ -320,7 +320,6 @@ impl Checker {
 
     pub fn infer_and_check(&mut self, node_info: NodeInfo, other: DataType) -> DataType {
         if let Some(data_type) = node_info.data_type.clone() {
-            println!("{:?}, {:?}", other, node_info);
             if self.check_data_type(other.clone(), data_type.clone()) {
                 other
             } else {
@@ -377,7 +376,6 @@ impl Checker {
                         value_node.convert(Node::Value(ValueNode::VariableCall(value.clone())))
                     ])
                 } else {
-                    println!("Scope\n{:?}\n", self.scope);
                     panic!("Variable / Class '{}' not found", value)
                 }
             }
