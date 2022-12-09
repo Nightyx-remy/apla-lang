@@ -191,7 +191,7 @@ impl Translator {
 
     fn translate_root(&mut self, root: Positioned<Node>) -> CFile {
         match root.data {
-            Node::VariableDefinition { var_type, name, data_type, value } => {
+            Node::VariableDefinition { .. } => {
                 todo!("Should variable definition be allowed as root (constant?)")
             },
             Node::FunctionDefinition { name, return_type, params, body, constructor } => {

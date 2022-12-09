@@ -1,5 +1,3 @@
-use std::default;
-
 use crate::{util::{file::SourceFile, position::{Position, Positioned}}, lexer::{token::{Token, Keyword}, error::LexerError}};
 
 pub struct Lexer {
@@ -96,7 +94,7 @@ impl Lexer {
 
     pub fn tokenize(&mut self) -> Result<Vec<Positioned<Token>>, LexerError> {
         let mut tokens = Vec::new();
-        let mut space_count = 0;
+        let mut space_count;
         let mut space_start = self.pos.clone();
 
         loop {

@@ -169,13 +169,13 @@ pub enum Operator {
     Assignment
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum VarType {
     Constant,
     Variable
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct FunctionDefinitionParameter {
     pub name: Positioned<String>,
     pub data_type: Positioned<String>
