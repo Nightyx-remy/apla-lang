@@ -14,6 +14,7 @@ pub mod checker;
 // TODO: Checker errors
 // TODO: Add Destructor
 // TODO: transform non-c-type to pointers [checker]
+// FIXME: Change c_byte to c_char
 
 fn transpile_project(folder: &str) {    
     std::fs::remove_dir_all("./out").unwrap();

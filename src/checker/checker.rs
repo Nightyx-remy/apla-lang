@@ -23,7 +23,7 @@ impl Display for DataType {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct NodeInfo {
     data_type: Option<DataType>, // TODO: change to option and check every time to see if the datatype can be inferred
     symbol: Option<Symbol>
@@ -40,7 +40,7 @@ impl NodeInfo {
 
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct VariableSymbol {
     var_type: VarType,
     name: String,
@@ -61,14 +61,14 @@ impl VariableSymbol {
 
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum FunctionType {
     ExternalFunction,
     Constructor,
     Function
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct FunctionSymbol {
     name: String,
     data_type: DataType,
@@ -89,7 +89,7 @@ impl FunctionSymbol {
 
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ClassSymbol {
     name: String,
     fields: Vec<Arc<Mutex<VariableSymbol>>>,
@@ -128,27 +128,28 @@ impl ClassSymbol {
 
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Symbol {
     Function(Arc<Mutex<FunctionSymbol>>),
     Variable(Arc<Mutex<VariableSymbol>>),
     Class(Arc<Mutex<ClassSymbol>>)
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum ScopeType {
     Root,
     Function(String, DataType),
     Class(String)
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Scope {
     scope: ScopeType,
     parent: Option<Box<Scope>>,
     variables: Vec<Arc<Mutex<VariableSymbol>>>,
     functions: Vec<Arc<Mutex<FunctionSymbol>>>,
-    classes: Vec<Arc<Mutex<ClassSymbol>>>
+    classes: Vec<Arc<Mutex<ClassSymbol>>>,
+    selected: Option<Box<Scope>>
 }
 
 impl Scope {
@@ -159,7 +160,8 @@ impl Scope {
             parent,
             variables: Vec::new(),
             functions: Vec::new(),
-            classes: Vec::new()
+            classes: Vec::new(),
+            selected: None,
         }
     }
 
@@ -170,6 +172,12 @@ impl Scope {
     }
 
     pub fn get_variable(&mut self, name: String) -> Option<Arc<Mutex<VariableSymbol>>> {
+        if let Some(selected) = &mut self.selected {
+            let var = selected.get_variable(name);
+            self.selected = None;
+            return var;
+        } 
+
         for variable in self.variables.iter() {
             if variable.lock().unwrap().name == name {
                 return Some(variable.clone());
@@ -183,6 +191,12 @@ impl Scope {
     }
 
     pub fn get_function(&mut self, name: String) -> Option<Arc<Mutex<FunctionSymbol>>> {
+        if let Some(selected) = &mut self.selected {
+            let fun = selected.get_function(name);
+            self.selected = None;
+            return fun;
+        } 
+
         for function in self.functions.iter() {
             if function.lock().unwrap().name == name {
                 return Some(function.clone());
@@ -196,6 +210,12 @@ impl Scope {
     }
 
     pub fn get_class(&mut self, name: String) -> Option<Arc<Mutex<ClassSymbol>>> {
+        if let Some(selected) = &mut self.selected {
+            let class = selected.get_class(name);
+            self.selected = None;
+            return class;
+        } 
+
         for class in self.classes.iter_mut() {
             if class.lock().unwrap().name == name {
                 return Some(class.clone());
@@ -299,7 +319,8 @@ impl Checker {
     }
 
     pub fn infer_and_check(&mut self, node_info: NodeInfo, other: DataType) -> DataType {
-        if let Some(data_type) = node_info.data_type {
+        if let Some(data_type) = node_info.data_type.clone() {
+            println!("{:?}, {:?}", other, node_info);
             if self.check_data_type(other.clone(), data_type.clone()) {
                 other
             } else {
@@ -326,6 +347,16 @@ impl Checker {
         }
     }
 
+    pub fn infer_and_check2(&mut self, node_info: NodeInfo, other: NodeInfo) -> DataType {
+        if let Some(data_type) = other.data_type {
+            self.infer_and_check(node_info, data_type)
+        } else if let Some(data_type) = node_info.data_type {
+            self.infer_and_check(other, data_type)
+        } else {
+            panic!("Cannot infer type (constraints not supported)")
+        }
+    }
+
     fn check_value(&mut self, value_node: Positioned<ValueNode>) -> (NodeInfo, Vec<Positioned<Node>>) {
         match value_node.data.clone() {
             ValueNode::Decimal(_) => (
@@ -341,15 +372,92 @@ impl Checker {
                     (NodeInfo::new(variable.lock().unwrap().data_type.clone(), Some(Symbol::Variable(variable.clone()))), vec![
                         value_node.convert(Node::Value(ValueNode::VariableCall(value.clone())))
                     ])
+                } else if let Some(class) = self.scope.get_class(value.clone()) {
+                    (NodeInfo::new(Some(DataType::Custom(value.clone())), Some(Symbol::Class(class))), vec![
+                        value_node.convert(Node::Value(ValueNode::VariableCall(value.clone())))
+                    ])
                 } else {
-                    panic!("Variable not found!")
+                    println!("Scope\n{:?}\n", self.scope);
+                    panic!("Variable / Class '{}' not found", value)
                 }
             }
-            ValueNode::This => todo!(),
+            ValueNode::This => {
+                if let Some(this) = self.scope.get_variable("self".to_string()) {
+                    let data_type = this.lock().unwrap().data_type.clone();
+                    (NodeInfo::new(data_type, Some(Symbol::Variable(this))), vec![
+                        value_node.convert(Node::Value(ValueNode::This))
+                    ])
+                } else {
+                    panic!("Cannot use this outside of a class!");
+                }
+            },
         }
     }
 
-    fn check_binary_operation(&mut self, lhs: Positioned<Node>, op: Positioned<Operator>, rhs: Positioned<Node>) -> (NodeInfo, Vec<Positioned<Node>>) {        
+    fn check_assignment(&mut self, position: Positioned<()>, lhs: Positioned<Node>, op: Positioned<Operator>, rhs: Positioned<Node>) -> (NodeInfo, Vec<Positioned<Node>>) {
+        let (lhs_info, lhs_ast) = self.check_node(lhs);
+        let (rhs_info, rhs_ast) = self.check_node(rhs);
+        let data_type = self.infer_and_check2(lhs_info, rhs_info);
+        (NodeInfo::new(Some(data_type), None), vec![
+            position.convert(Node::BinaryOperation {
+                lhs: Box::new(lhs_ast[0].clone()), // TODO: check if more than 1 node
+                op,
+                rhs: Box::new(rhs_ast[0].clone()) // TODO: check if more than 1 node
+            })
+        ])
+    }
+
+    fn check_member_access(&mut self, position: Positioned<()>, lhs: Positioned<Node>, op: Positioned<Operator>, rhs: Positioned<Node>) -> (NodeInfo, Vec<Positioned<Node>>) {
+        let (lhs_info, lhs_ast) = self.check_node(lhs);
+
+        if let Some(symbol) = lhs_info.symbol {
+            let class_symbol = match symbol {
+                Symbol::Function(_) => panic!("Access impossible in function"),
+                Symbol::Variable(variable) => {
+                    if let Some(DataType::Custom(data_type)) = variable.lock().unwrap().data_type.clone() {
+                        if let Some(class_symbol) = self.scope.get_class(data_type) {
+                            class_symbol
+                        } else {
+                            panic!("Could not get class!")
+                        }
+                    } else {
+                        panic!("Could not infer type of variable!")
+                    }
+                },
+                Symbol::Class(class) => class,
+            };
+
+            // Select the scope
+            let mut scope = Box::new(Scope::new(ScopeType::Class(class_symbol.lock().unwrap().name.clone()), None));
+
+            // Push the fields to the selected scope
+            for field in class_symbol.lock().unwrap().fields.iter() {
+                scope.variables.push(field.clone());
+            }
+
+            // Push the functions to the selected scope
+            for function in class_symbol.lock().unwrap().functions.iter() {
+                scope.functions.push(function.clone());
+            }
+
+            self.scope.selected = Some(scope);
+
+            // Process rhs
+            let (rhs_info, rhs_ast) = self.check_node(rhs);
+            
+            (rhs_info, vec![
+                position.convert(Node::BinaryOperation { 
+                    lhs: Box::new(lhs_ast[0].clone()), 
+                    op, 
+                    rhs: Box::new(rhs_ast[0].clone()) 
+                })
+            ])
+        } else {
+            panic!("Nothing to access (issue with the lhs)");
+        }
+    }
+
+    fn check_binary_operation(&mut self, position: Positioned<()>, lhs: Positioned<Node>, op: Positioned<Operator>, rhs: Positioned<Node>) -> (NodeInfo, Vec<Positioned<Node>>) {        
         // TODO: Check binary operation
 
         match op.data {
@@ -357,11 +465,9 @@ impl Checker {
             Operator::Minus => todo!("Check minus"),
             Operator::Multiply => todo!("Check multiply"),
             Operator::Divide => todo!("Check divide"),
-            Operator::MemberAccess => todo!("Check member access"),
-            Operator::Assignment => todo!("Check assignment"),
+            Operator::MemberAccess => self.check_member_access(position, lhs, op, rhs),
+            Operator::Assignment => self.check_assignment(position, lhs, op, rhs),
         }
-
-        todo!()
     }
 
     fn check_variable_definition(&mut self, position: Positioned<()>, var_type: Positioned<VarType>, name: Positioned<String>, data_type: Option<Positioned<String>>, value: Option<Box<Positioned<Node>>>) -> (NodeInfo, Vec<Positioned<Node>>) {
@@ -434,12 +540,23 @@ impl Checker {
         // Add Symbol
         self.scope.functions.push(Arc::new(Mutex::new(FunctionSymbol::new(name.data.clone(), data_type.clone(), function_type, params.clone()))));
         
+        
         // Process body
         let new_body = if let Some(body) = body {
             // Enter Scope
             let parent = std::mem::replace(&mut self.scope, Scope::new(ScopeType::Root, None));
             self.scope = Scope::new(ScopeType::Function(name.data.clone(), data_type.clone()), Some(Box::new(parent)));
             
+            // TODO: Push the params in the scope
+            for param in params.iter() {
+                self.scope.variables.push(Arc::new(Mutex::new(VariableSymbol { 
+                    var_type: VarType::Constant, 
+                    name: param.name.data.clone(), 
+                    data_type: Some(DataType::Custom(param.data_type.data.clone())), 
+                    initialized: true 
+                })))
+            }
+
             // TODO: Add allocation if constructor
 
             // Check body
@@ -524,13 +641,16 @@ impl Checker {
         }
         
         // Add Symbol
-        let mut class = ClassSymbol::new(name.data.clone());
-        self.scope.classes.push(Arc::new(Mutex::new(class)));
+        let class = Arc::new(Mutex::new(ClassSymbol::new(name.data.clone())));
+        self.scope.classes.push(class.clone());
 
         // Enter scope
         let mut scope = std::mem::replace(&mut self.scope, Scope::new(ScopeType::Root, None));
         self.scope = Scope::new(ScopeType::Class(name.data.clone()), Some(Box::new(scope)));
         
+        // Add Self
+        self.scope.variables.push(Arc::new(Mutex::new(VariableSymbol::new(VarType::Constant, "self".to_string(), Some(DataType::Custom(name.data.clone())), true))));
+
         // Check the body
         let mut new_body = Vec::new();
         for node in body {
@@ -540,7 +660,8 @@ impl Checker {
                     new_body.append(&mut ast);
                     // Add variable to symbol (last symbol)
                     let field_symbol = self.scope.variables.last().clone().cloned().unwrap();
-                    self.scope.parent.as_mut().unwrap().classes.last_mut().unwrap().lock().unwrap().fields.push(field_symbol);
+                    class.lock().unwrap().fields.push(field_symbol);
+                    // self.scope.parent.as_mut().unwrap().classes.last_mut().unwrap().lock().unwrap().fields.push(field_symbol);
                     // TODO: process default value (to be in constructor) [not supported for now]
                 },
                 Node::FunctionDefinition { name, return_type, params, body, constructor } => {
@@ -548,7 +669,8 @@ impl Checker {
                     new_body.append(&mut ast);
                     // Add function to symbol (last symbol)
                     let function_symbol = self.scope.functions.last().clone().cloned().unwrap();
-                    self.scope.parent.as_mut().unwrap().classes.last_mut().unwrap().lock().unwrap().functions.push(function_symbol);
+                    class.lock().unwrap().functions.push(function_symbol);
+                    // self.scope.parent.as_mut().unwrap().classes.last_mut().unwrap().lock().unwrap().functions.push(function_symbol);
                 }
                 _ => panic!("Unexpected node")
             }
@@ -569,7 +691,7 @@ impl Checker {
             Node::Value(value) => 
                 self.check_value(node.convert(value)),
             Node::BinaryOperation { lhs, op, rhs } => 
-                self.check_binary_operation(*lhs, op, *rhs),
+                self.check_binary_operation(node.convert(()), *lhs, op, *rhs),
             Node::VariableDefinition { var_type, name, data_type, value } => 
                 self.check_variable_definition(node.convert(()), var_type, name, data_type, value),
             Node::FunctionDefinition { name, return_type, params, body, constructor } => 
