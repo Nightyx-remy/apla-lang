@@ -395,6 +395,23 @@ impl Checker {
     fn check_assignment(&mut self, position: Positioned<()>, lhs: Positioned<Node>, op: Positioned<Operator>, rhs: Positioned<Node>) -> (NodeInfo, Vec<Positioned<Node>>) {
         let (lhs_info, lhs_ast) = self.check_node(lhs);
         let (rhs_info, rhs_ast) = self.check_node(rhs);
+        
+        // Check var type
+        if let Some(symbol) = &lhs_info.symbol {
+            match symbol {
+                Symbol::Function(_) => panic!("Cannot assign to functions!"),
+                Symbol::Variable(variable) => {
+                    let mut variable = variable.lock().unwrap();
+                    if variable.var_type == VarType::Constant && variable.initialized {
+                        panic!("Cannot assign to constant '{:?}'!", variable);
+                    }
+                    variable.initialized = true;
+                },
+                Symbol::Class(_) => panic!("Cannot assign to classes"),
+            }
+        }
+
+        // Check data_type
         let data_type = self.infer_and_check2(lhs_info, rhs_info);
         (NodeInfo::new(Some(data_type), None), vec![
             position.convert(Node::BinaryOperation {

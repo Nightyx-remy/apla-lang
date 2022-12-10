@@ -169,7 +169,7 @@ pub enum Operator {
     Assignment
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum VarType {
     Constant,
     Variable
