@@ -1,7 +1,7 @@
 class I8 
-    const inner: c_byte
+    const inner: c_char
 
-    new create(value: c_byte) =>
+    new create(value: c_char) =>
         self.inner = value
 
 class I16

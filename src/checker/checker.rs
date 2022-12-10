@@ -271,7 +271,7 @@ impl Checker {
             DataType::CDecimal => {
                 if let DataType::Custom(inner) = &found {
                     match inner.as_str() {
-                        "c_byte" => return true,
+                        "c_char" => return true,
                         "c_short" => return true,
                         "c_int" => return true,
                         "c_long" => return true,
@@ -294,7 +294,7 @@ impl Checker {
             DataType::CDecimal => {
                 if let DataType::Custom(inner) = expected {
                     match inner.as_str() {
-                        "c_byte" => true,
+                        "c_char" => true,
                         "c_short" => true,
                         "c_int" => true,
                         "c_long" => true,

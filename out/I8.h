@@ -1,4 +1,4 @@
 typedef struct I8T {
-	byte inner;
+	char inner;
 } I8;
-I8* create(byte value);
+I8* create(char value);

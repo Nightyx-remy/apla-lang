@@ -13,6 +13,7 @@ pub mod checker;
 // TODO: Add errors to transpile_project()
 // TODO: Checker errors
 // TODO: Add Destructor
+// TODO: rename functions and fields depending on the class
 // TODO: transform non-c-type to pointers [checker]
 // FIXME: Change c_byte to c_char
 

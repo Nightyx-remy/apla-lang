@@ -86,7 +86,7 @@ impl Translator {
     fn translate_type(&mut self, data_type: Option<Positioned<String>>) -> String {
         if let Some(data_type) = data_type {
             match data_type.data.as_str() {
-                "c_byte" => "byte".to_string(),
+                "c_char" => "char".to_string(),
                 "c_short" => "short".to_string(),
                 "c_int" => "int".to_string(),
                 "c_long" => "long".to_string(),
